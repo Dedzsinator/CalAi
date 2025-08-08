@@ -88,7 +88,7 @@ class ApiService {
 
   // Meals
   async logMeal(mealData: {
-    foods: Array<{
+    foods: {
       name: string;
       calories: number;
       protein: number;
@@ -96,7 +96,7 @@ class ApiService {
       fat: number;
       confidence: number;
       portion_size?: string;
-    }>;
+    }[];
     image_url?: string;
     notes?: string;
     eaten_at?: string;
@@ -134,16 +134,20 @@ class ApiService {
 
   // Analytics
   async getAnalytics(period: 'day' | 'week' | 'month' = 'week') {
+    const endpoint = period === 'day' ? '/analytics/daily' : 
+                    period === 'week' ? '/analytics/weekly' : 
+                    '/analytics/monthly';
+    
     return this.request<{
       calories: { avg: number; total: number; trend: number[] };
       macros: { protein: number; carbs: number; fat: number };
       habits: { meal_times: any[]; common_foods: any[] };
-    }>(`/analytics?period=${period}`);
+    }>(endpoint);
   }
 
   // Food Database
   async searchFoods(query: string) {
-    return this.request<Array<{
+    return this.request<{
       id: string;
       name: string;
       calories_per_100g: number;
@@ -151,7 +155,7 @@ class ApiService {
       carbs_per_100g: number;
       fat_per_100g: number;
       brand?: string;
-    }>>(`/foods/search?q=${encodeURIComponent(query)}`);
+    }[]>(`/foods/search?q=${encodeURIComponent(query)}`);
   }
 
   // Barcode
@@ -167,7 +171,10 @@ class ApiService {
           fat: number;
         };
       };
-    }>(`/barcodes/${barcode}`);
+    }>(`/foods/barcode`, {
+      method: 'POST',
+      body: JSON.stringify({ barcode }),
+    });
   }
 
   // AI Inference Fallback
@@ -180,7 +187,7 @@ class ApiService {
     } as any);
 
     return this.request<{
-      predictions: Array<{
+      predictions: {
         food_name: string;
         confidence: number;
         calories: number;
@@ -188,8 +195,8 @@ class ApiService {
         carbs: number;
         fat: number;
         portion_estimate: string;
-      }>;
-    }>('/inference', {
+      }[];
+    }>('/inference/classify', {
       method: 'POST',
       headers: {
         'Content-Type': 'multipart/form-data',

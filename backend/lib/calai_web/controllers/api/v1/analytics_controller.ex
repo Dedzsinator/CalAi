@@ -1,9 +1,74 @@
 defmodule CalAiWeb.Api.V1.AnalyticsController do
   use CalAiWeb, :controller
 
-  alias CalAi.{Analytics, Accounts}
+  alias CalAi.{Analytics, Accounts, Cache}
 
   action_fallback(CalAiWeb.FallbackController)
+
+  def daily_summary(conn, _params) do
+    user = conn.assigns.current_user
+
+    case Cache.get_cached_analytics(user.id, "daily") do
+      {:ok, cached_data} ->
+        render(conn, "analytics.json", analytics: cached_data)
+
+      {:miss, _} ->
+        case Analytics.get_user_analytics(user.id, "daily") do
+          {:ok, analytics_data} ->
+            Cache.cache_analytics(user.id, "daily", analytics_data)
+            render(conn, "analytics.json", analytics: analytics_data)
+
+          {:error, reason} ->
+            {:error, reason}
+        end
+    end
+  end
+
+  def weekly_summary(conn, _params) do
+    user = conn.assigns.current_user
+
+    case Cache.get_cached_analytics(user.id, "weekly") do
+      {:ok, cached_data} ->
+        render(conn, "analytics.json", analytics: cached_data)
+
+      {:miss, _} ->
+        case Analytics.get_user_analytics(user.id, "weekly") do
+          {:ok, analytics_data} ->
+            Cache.cache_analytics(user.id, "weekly", analytics_data)
+            render(conn, "analytics.json", analytics: analytics_data)
+
+          {:error, reason} ->
+            {:error, reason}
+        end
+    end
+  end
+
+  def monthly_summary(conn, _params) do
+    user = conn.assigns.current_user
+
+    case Cache.get_cached_analytics(user.id, "monthly") do
+      {:ok, cached_data} ->
+        render(conn, "analytics.json", analytics: cached_data)
+
+      {:miss, _} ->
+        case Analytics.get_user_analytics(user.id, "monthly") do
+          {:ok, analytics_data} ->
+            Cache.cache_analytics(user.id, "monthly", analytics_data)
+            render(conn, "analytics.json", analytics: analytics_data)
+
+          {:error, reason} ->
+            {:error, reason}
+        end
+    end
+  end
+
+  def trends(conn, params) do
+    user = conn.assigns.current_user
+    period = Map.get(params, "period", "week")
+
+    trends_data = Analytics.get_trends(user.id, period)
+    render(conn, "trends.json", trends: trends_data)
+  end
 
   def index(conn, params) do
     user = conn.assigns.current_user

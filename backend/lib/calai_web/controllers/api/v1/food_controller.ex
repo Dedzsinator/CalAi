@@ -1,7 +1,7 @@
 defmodule CalAiWeb.Api.V1.FoodController do
   use CalAiWeb, :controller
 
-  alias CalAi.{Nutrition, Repo}
+  alias CalAi.{Nutrition, Repo, Cache}
   alias CalAi.Nutrition.Food
 
   action_fallback(CalAiWeb.FallbackController)
@@ -221,5 +221,56 @@ defmodule CalAiWeb.Api.V1.FoodController do
   def bulk_search(conn, %{"food_names" => food_names}) do
     results = Nutrition.bulk_search_foods(food_names)
     render(conn, "bulk_search.json", results: results)
+  end
+
+  def barcode_lookup(conn, %{"barcode" => barcode}) do
+    # Check cache first
+    case CalAi.Cache.get_cached_barcode(barcode) do
+      {:ok, cached_data} ->
+        render(conn, "barcode.json", product: cached_data)
+
+      {:miss, _} ->
+        # Cache miss - try to lookup from external API or database
+        case Nutrition.get_food_by_barcode(barcode) do
+          nil ->
+            # Try external barcode API (e.g., Open Food Facts)
+            case lookup_external_barcode(barcode) do
+              {:ok, product_data} ->
+                # Cache the result
+                CalAi.Cache.cache_barcode(barcode, product_data)
+                render(conn, "barcode.json", product: product_data)
+
+              {:error, :not_found} ->
+                {:error, :not_found}
+
+              {:error, reason} ->
+                {:error, reason}
+            end
+
+          food ->
+            # Convert food to product format
+            product_data = %{
+              name: food.name,
+              brand: food.brand || "",
+              nutrition: %{
+                calories: food.calories_per_100g,
+                protein: food.protein_per_100g,
+                carbs: food.carbs_per_100g,
+                fat: food.fat_per_100g
+              }
+            }
+
+            # Cache the result
+            CalAi.Cache.cache_barcode(barcode, product_data)
+            render(conn, "barcode.json", product: product_data)
+        end
+    end
+  end
+
+  # Private helper function for external barcode lookup
+  defp lookup_external_barcode(barcode) do
+    # TODO: Implement external API call to Open Food Facts or similar
+    # For now, return not found
+    {:error, :not_found}
   end
 end

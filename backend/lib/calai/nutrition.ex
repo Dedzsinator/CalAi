@@ -8,6 +8,7 @@ defmodule CalAi.Nutrition do
   import Ecto.Query, warn: false
   alias CalAi.Repo
   alias CalAi.Nutrition.Food
+  alias CalAi.Cache
   require Logger
 
   @doc """
@@ -145,17 +146,35 @@ defmodule CalAi.Nutrition do
   end
 
   @doc """
-  Search foods by name or description.
+  Search foods by name or description with Redis caching.
   """
   def search_foods(query, params \\ %{}) when is_binary(query) do
-    search_term = "%#{query}%"
+    category = Map.get(params, :category)
+    limit = Map.get(params, :limit, 20)
 
-    from(f in Food,
-      where: ilike(f.name, ^search_term) or ilike(f.description, ^search_term)
-    )
-    |> apply_filters(params)
-    |> apply_pagination(params)
-    |> Repo.all()
+    # Check cache first
+    case CalAi.Cache.get_cached_search(query, category) do
+      {:ok, cached_results} ->
+        # Apply limit to cached results
+        Enum.take(cached_results, limit)
+
+      {:miss, _} ->
+        # Cache miss, query database
+        search_term = "%#{query}%"
+
+        results =
+          from(f in Food,
+            where: ilike(f.name, ^search_term) or ilike(f.description, ^search_term)
+          )
+          |> apply_filters(params)
+          |> apply_pagination(params)
+          |> Repo.all()
+
+        # Cache the results
+        CalAi.Cache.cache_search(query, category, results)
+
+        results
+    end
   end
 
   @doc """
