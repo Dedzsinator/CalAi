@@ -75,7 +75,7 @@ export default function ProfileScreen() {
                             await StorageService.clearAllData();
                             Alert.alert('Success', 'All data has been cleared.');
                             setProfile(null);
-                        } catch (error) {
+                        } catch {
                             Alert.alert('Error', 'Failed to clear data.');
                         }
                     },
@@ -91,7 +91,7 @@ export default function ProfileScreen() {
                 'Data Export',
                 `Found ${data.meals.length} meals to export. In a full implementation, this would save to a file or share the data.`
             );
-        } catch (error) {
+        } catch {
             Alert.alert('Error', 'Failed to export data.');
         }
     };
@@ -146,7 +146,7 @@ export default function ProfileScreen() {
 
                     <TouchableOpacity style={styles.settingItem}>
                         <View style={styles.settingInfo}>
-                            <Ionicons name="target" size={24} color="#4ECDC4" />
+                            <Ionicons name="radio-button-on" size={24} color="#4ECDC4" />
                             <View style={styles.settingText}>
                                 <Text style={styles.settingTitle}>Nutrition Goals</Text>
                                 <Text style={styles.settingDescription}>

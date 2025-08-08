@@ -52,22 +52,37 @@ export default function MealConfirmationScreen() {
     const [isSaving, setIsSaving] = useState(false);
 
     useEffect(() => {
-        if (params.predictions) {
+        // Parse predictions once on component mount
+        const predictionsParam = params.predictions;
+        const imageUriParam = params.imageUri;
+
+        if (predictionsParam && typeof predictionsParam === 'string') {
             try {
-                const parsedPredictions = JSON.parse(params.predictions as string);
+                const parsedPredictions = JSON.parse(predictionsParam);
                 setPredictions(parsedPredictions);
+
                 if (parsedPredictions.length > 0) {
-                    selectPrediction(parsedPredictions[0]);
+                    const firstPrediction = parsedPredictions[0];
+                    setSelectedPrediction(firstPrediction);
+                    setEditedNutrition({
+                        calories: firstPrediction.calories,
+                        protein: firstPrediction.protein,
+                        carbs: firstPrediction.carbs,
+                        fat: firstPrediction.fat,
+                        portion: firstPrediction.portion_estimate,
+                    });
+                    setCustomFoodName(firstPrediction.food_name);
                 }
             } catch (error) {
                 console.error('Error parsing predictions:', error);
             }
         }
 
-        if (params.imageUri) {
-            setImageUri(decodeURIComponent(params.imageUri as string));
+        if (imageUriParam && typeof imageUriParam === 'string') {
+            setImageUri(decodeURIComponent(imageUriParam));
         }
-    }, [params]);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, []); // Intentionally empty to prevent infinite loop
 
     const selectPrediction = (prediction: FoodPrediction) => {
         setSelectedPrediction(prediction);

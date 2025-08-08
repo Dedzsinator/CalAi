@@ -175,16 +175,18 @@ export default function CameraScreen() {
   };
 
   const handleBarCodeScanned = async ({ type, data }: { type: string; data: string }) => {
-    if (scannedData === data) return; // Prevent duplicate scans
+    if (scannedData === data || isProcessing) return; // Prevent duplicate scans and overlapping processing
 
+    console.log('Barcode scanned:', { type, data });
     setScannedData(data);
     setIsProcessing(true);
 
     try {
       // Look up barcode in database
+      console.log('Looking up barcode in database...');
       const result = await ApiService.lookupBarcode(data);
 
-      if (result.data.product) {
+      if (result.success && result.data.product) {
         const product = result.data.product;
         const prediction: FoodPrediction = {
           food_name: product.name,
@@ -196,6 +198,7 @@ export default function CameraScreen() {
           portion_estimate: '1 serving',
         };
 
+        console.log('Product found:', product);
         // Navigate to meal confirmation with barcode data
         router.push({
           pathname: '/meal-confirmation',
@@ -206,21 +209,60 @@ export default function CameraScreen() {
           },
         });
       } else {
+        console.log('Product not found in database');
         Alert.alert(
           'Product Not Found',
           'This barcode wasn\'t found in our database. Would you like to add it manually?',
           [
-            { text: 'Cancel', style: 'cancel' },
-            { text: 'Add Manually', onPress: () => router.push('/manual-entry') },
+            {
+              text: 'Cancel',
+              style: 'cancel',
+              onPress: () => {
+                setScannedData(null);
+                setIsProcessing(false);
+              }
+            },
+            {
+              text: 'Add Manually',
+              onPress: () => {
+                setScannedData(null);
+                setIsProcessing(false);
+                router.push('/manual-entry');
+              }
+            },
           ]
         );
       }
     } catch (error) {
       console.error('Barcode lookup failed:', error);
-      Alert.alert('Error', 'Failed to look up product. Please try again.');
+      Alert.alert(
+        'Lookup Failed',
+        'Failed to look up this barcode. Would you like to add it manually?',
+        [
+          {
+            text: 'Cancel',
+            style: 'cancel',
+            onPress: () => {
+              setScannedData(null);
+              setIsProcessing(false);
+            }
+          },
+          {
+            text: 'Add Manually',
+            onPress: () => {
+              setScannedData(null);
+              setIsProcessing(false);
+              router.push('/manual-entry');
+            }
+          },
+        ]
+      );
     } finally {
-      setIsProcessing(false);
-      setScannedData(null);
+      // Reset state after a delay to prevent immediate re-scanning
+      setTimeout(() => {
+        setScannedData(null);
+        setIsProcessing(false);
+      }, 2000);
     }
   };
 
@@ -346,6 +388,11 @@ export default function CameraScreen() {
           <View style={styles.bottomControls}>
             <TouchableOpacity style={styles.secondaryButton} onPress={pickImage}>
               <Ionicons name="image" size={24} color="white" />
+            </TouchableOpacity>
+
+            <TouchableOpacity style={styles.manualEntryButton} onPress={() => router.push('/manual-entry')}>
+              <Ionicons name="add" size={20} color="#007AFF" />
+              <Text style={styles.manualEntryText}>Manual</Text>
             </TouchableOpacity>
 
             <Animated.View style={{ transform: [{ scale: pulseAnim }] }}>
@@ -569,6 +616,20 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(255, 255, 255, 0.2)',
     justifyContent: 'center',
     alignItems: 'center',
+  },
+  manualEntryButton: {
+    backgroundColor: 'rgba(255, 255, 255, 0.9)',
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 20,
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  manualEntryText: {
+    color: '#007AFF',
+    fontSize: 14,
+    fontWeight: '600',
+    marginLeft: 4,
   },
   captureButton: {
     width: 80,

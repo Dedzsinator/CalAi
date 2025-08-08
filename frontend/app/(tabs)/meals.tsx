@@ -20,23 +20,27 @@ import { useColorScheme } from '@/hooks/useColorScheme';
 import storageService from '@/services/storage';
 import apiService from '@/services/api';
 
-interface Meal {
+interface MealLog {
     id: string;
-    name: string;
-    timestamp: Date;
-    calories: number;
-    image?: string;
     foods: {
         name: string;
-        quantity: string;
         calories: number;
+        protein: number;
+        carbs: number;
+        fat: number;
+        confidence: number;
+        portion_size?: string;
     }[];
-    mealType: 'breakfast' | 'lunch' | 'dinner' | 'snack';
+    image_uri?: string;
+    notes?: string;
+    eaten_at: string;
+    synced: boolean;
+    created_at: string;
 }
 
 export default function MealsScreen() {
     const colorScheme = useColorScheme();
-    const [meals, setMeals] = useState<Meal[]>([]);
+    const [meals, setMeals] = useState<MealLog[]>([]);
     const [loading, setLoading] = useState(true);
     const [refreshing, setRefreshing] = useState(false);
     const [selectedPeriod, setSelectedPeriod] = useState<'today' | 'week' | 'month'>('today');
@@ -52,18 +56,26 @@ export default function MealsScreen() {
             setMeals(localMeals);
 
             // Then sync with backend
-            const syncedMeals = await apiService.getMeals(selectedPeriod);
-            setMeals(syncedMeals);
-
-            // Update local storage
-            await storageService.saveMeals(syncedMeals);
+            const syncedMeals = await apiService.getMeals();
+            if (syncedMeals.success && syncedMeals.data) {
+                // The API returns MealLog objects that need to be stored properly
+                for (const meal of syncedMeals.data) {
+                    await storageService.saveMeal({
+                        ...meal,
+                        synced: true
+                    });
+                }
+                // Reload from storage to get updated data
+                const updatedMeals = await storageService.getMeals();
+                setMeals(updatedMeals);
+            }
         } catch (error) {
             console.error('Error loading meals:', error);
             Alert.alert('Error', 'Failed to load meals');
         } finally {
             setLoading(false);
         }
-    }, [selectedPeriod]);
+    }, []);
 
     useEffect(() => {
         loadMeals();
@@ -98,36 +110,47 @@ export default function MealsScreen() {
         );
     };
 
-    const editMeal = (meal: Meal) => {
+    const editMeal = (meal: MealLog) => {
         router.push({
             pathname: '/manual-entry',
             params: { mealId: meal.id, editMode: 'true' },
         });
     };
 
-    const getMealIcon = (mealType: string) => {
-        switch (mealType) {
-            case 'breakfast':
-                return 'breakfast-dining';
-            case 'lunch':
-                return 'lunch-dining';
-            case 'dinner':
-                return 'dinner-dining';
-            case 'snack':
-                return 'cookie';
-            default:
-                return 'restaurant';
-        }
+    const getMealIcon = (eatenAt: string) => {
+        const hour = new Date(eatenAt).getHours();
+        if (hour < 10) return 'breakfast-dining';
+        if (hour < 15) return 'lunch-dining';
+        if (hour < 20) return 'dinner-dining';
+        return 'local-cafe'; // snack/late meal
     };
 
-    const formatTime = (timestamp: Date) => {
+    const getMealType = (eatenAt: string) => {
+        const hour = new Date(eatenAt).getHours();
+        if (hour < 10) return 'breakfast';
+        if (hour < 15) return 'lunch';
+        if (hour < 20) return 'dinner';
+        return 'snack';
+    };
+
+    const getTotalCalories = (foods: MealLog['foods']) => {
+        return foods.reduce((total, food) => total + food.calories, 0);
+    };
+
+    const getMealName = (foods: MealLog['foods']) => {
+        if (foods.length === 1) return foods[0].name;
+        if (foods.length === 2) return `${foods[0].name} & ${foods[1].name}`;
+        return `${foods[0].name} & ${foods.length - 1} more`;
+    };
+
+    const formatTime = (timestamp: Date | string) => {
         return new Date(timestamp).toLocaleTimeString('en-US', {
             hour: '2-digit',
             minute: '2-digit',
         });
     };
 
-    const formatDate = (timestamp: Date) => {
+    const formatDate = (timestamp: Date | string) => {
         const date = new Date(timestamp);
         const today = new Date();
         const yesterday = new Date(today);
@@ -142,22 +165,22 @@ export default function MealsScreen() {
         }
     };
 
-    const renderMeal = ({ item }: { item: Meal }) => (
+    const renderMeal = ({ item }: { item: MealLog }) => (
         <ThemedView style={[styles.mealCard, { borderColor: colors.border }]}>
             <View style={styles.mealHeader}>
                 <View style={styles.mealInfo}>
                     <View style={styles.mealTypeContainer}>
                         <MaterialIcons
-                            name={getMealIcon(item.mealType) as any}
+                            name={getMealIcon(item.eaten_at) as any}
                             size={20}
                             color={colors.primary}
                         />
                         <ThemedText style={styles.mealType}>
-                            {item.mealType.charAt(0).toUpperCase() + item.mealType.slice(1)}
+                            {getMealType(item.eaten_at).charAt(0).toUpperCase() + getMealType(item.eaten_at).slice(1)}
                         </ThemedText>
                     </View>
                     <ThemedText style={styles.mealTime}>
-                        {formatDate(item.timestamp)} • {formatTime(item.timestamp)}
+                        {formatDate(new Date(item.eaten_at))} • {formatTime(new Date(item.eaten_at))}
                     </ThemedText>
                 </View>
                 <View style={styles.mealActions}>
@@ -176,17 +199,17 @@ export default function MealsScreen() {
                 </View>
             </View>
 
-            {item.image && (
-                <Image source={{ uri: item.image }} style={styles.mealImage} />
+            {item.image_uri && (
+                <Image source={{ uri: item.image_uri }} style={styles.mealImage} />
             )}
 
-            <ThemedText style={styles.mealName}>{item.name}</ThemedText>
+            <ThemedText style={styles.mealName}>{getMealName(item.foods)}</ThemedText>
 
             <View style={styles.foodsList}>
                 {item.foods.map((food, index) => (
                     <View key={index} style={styles.foodItem}>
                         <ThemedText style={styles.foodName}>{food.name}</ThemedText>
-                        <ThemedText style={styles.foodQuantity}>{food.quantity}</ThemedText>
+                        <ThemedText style={styles.foodQuantity}>{food.portion_size || 'Standard serving'}</ThemedText>
                     </View>
                 ))}
             </View>
@@ -196,7 +219,7 @@ export default function MealsScreen() {
                     style={[styles.caloriesGradient, { backgroundColor: colors.primary }]}
                 >
                     <ThemedText style={styles.caloriesText}>
-                        {item.calories} cal
+                        {getTotalCalories(item.foods)} cal
                     </ThemedText>
                 </View>
             </View>
@@ -265,86 +288,21 @@ export default function MealsScreen() {
                             style={[styles.addButton, { backgroundColor: colors.primary }]}
                             onPress={() => router.push('/camera')}
                         >
-                            <MaterialIcons name="add" size={24} color="white" />
-                            <ThemedText style={styles.addButtonText}>Add Meal</ThemedText>
+                            <MaterialIcons name="camera-alt" size={24} color="white" />
+                            <ThemedText style={styles.addButtonText}>Camera</ThemedText>
+                        </TouchableOpacity>
+                        <TouchableOpacity
+                            style={[styles.addButton, { backgroundColor: colors.secondary, marginTop: 12 }]}
+                            onPress={() => router.push('/manual-entry')}
+                        >
+                            <MaterialIcons name="edit" size={24} color="white" />
+                            <ThemedText style={styles.addButtonText}>Search Foods</ThemedText>
                         </TouchableOpacity>
                     </ThemedView>
                 }
             />
         </SafeAreaView>
     );
-}
-
-const PeriodSelector = () => (
-    <View style={[styles.periodSelector, { borderColor: colors.border }]}>
-        {(['today', 'week', 'month'] as const).map((period) => (
-            <TouchableOpacity
-                key={period}
-                style={[
-                    styles.periodButton,
-                    selectedPeriod === period && { backgroundColor: colors.primary },
-                ]}
-                onPress={() => setSelectedPeriod(period)}
-            >
-                <ThemedText
-                    style={[
-                        styles.periodButtonText,
-                        selectedPeriod === period && { color: 'white' },
-                    ]}
-                >
-                    {period.charAt(0).toUpperCase() + period.slice(1)}
-                </ThemedText>
-            </TouchableOpacity>
-        ))}
-    </View>
-);
-
-if (loading) {
-    return (
-        <SafeAreaView style={styles.container}>
-            <ThemedView style={styles.loadingContainer}>
-                <ActivityIndicator size="large" color={colors.primary} />
-                <ThemedText style={styles.loadingText}>Loading meals...</ThemedText>
-            </ThemedView>
-        </SafeAreaView>
-    );
-}
-
-return (
-    <SafeAreaView style={styles.container}>
-        <ThemedView style={styles.header}>
-            <ThemedText style={styles.title}>My Meals</ThemedText>
-            <PeriodSelector />
-        </ThemedView>
-
-        <FlatList
-            data={meals}
-            renderItem={renderMeal}
-            keyExtractor={(item) => item.id}
-            contentContainerStyle={styles.listContent}
-            refreshControl={
-                <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
-            }
-            showsVerticalScrollIndicator={false}
-            ListEmptyComponent={
-                <ThemedView style={styles.emptyContainer}>
-                    <MaterialIcons name="restaurant" size={64} color={colors.textSecondary} />
-                    <ThemedText style={styles.emptyTitle}>No meals logged</ThemedText>
-                    <ThemedText style={styles.emptySubtitle}>
-                        Start tracking your meals by taking a photo or adding manually
-                    </ThemedText>
-                    <TouchableOpacity
-                        style={[styles.addButton, { backgroundColor: colors.primary }]}
-                        onPress={() => router.push('/camera')}
-                    >
-                        <MaterialIcons name="add" size={24} color="white" />
-                        <ThemedText style={styles.addButtonText}>Add Meal</ThemedText>
-                    </TouchableOpacity>
-                </ThemedView>
-            }
-        />
-    </SafeAreaView>
-);
 }
 
 const styles = StyleSheet.create({
