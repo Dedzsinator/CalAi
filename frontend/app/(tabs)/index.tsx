@@ -51,7 +51,7 @@ export default function HomeScreen() {
     try {
       const meals = await StorageService.getTodaysMeals();
       const nutrition = await StorageService.calculateDailyNutrition();
-      
+
       setTodaysMeals(meals);
       setTodaysNutrition(nutrition);
     } catch (error) {
@@ -78,10 +78,10 @@ export default function HomeScreen() {
 
   const formatTime = (dateString: string) => {
     const date = new Date(dateString);
-    return date.toLocaleTimeString('en-US', { 
-      hour: '2-digit', 
+    return date.toLocaleTimeString('en-US', {
+      hour: '2-digit',
       minute: '2-digit',
-      hour12: true 
+      hour12: true
     });
   };
 
@@ -106,11 +106,11 @@ export default function HomeScreen() {
         <View style={styles.header}>
           <View>
             <ThemedText style={styles.greeting}>Good morning! 🌅</ThemedText>
-            <ThemedText style={styles.date}>{new Date().toLocaleDateString('en-US', { 
-              weekday: 'long', 
-              year: 'numeric', 
-              month: 'long', 
-              day: 'numeric' 
+            <ThemedText style={styles.date}>{new Date().toLocaleDateString('en-US', {
+              weekday: 'long',
+              year: 'numeric',
+              month: 'long',
+              day: 'numeric'
             })}</ThemedText>
           </View>
         </View>
@@ -125,8 +125,8 @@ export default function HomeScreen() {
 
         {/* Today's Progress */}
         <ThemedView style={styles.progressCard}>
-          <ThemedText style={styles.cardTitle}>Today's Progress</ThemedText>
-          
+          <ThemedText style={styles.cardTitle}>Today&apos;s Progress</ThemedText>
+
           {/* Calorie Progress */}
           <View style={styles.progressItem}>
             <View style={styles.progressHeader}>
@@ -136,14 +136,14 @@ export default function HomeScreen() {
               </Text>
             </View>
             <View style={styles.progressBar}>
-              <View 
+              <View
                 style={[
                   styles.progressFill,
-                  { 
+                  {
                     width: `${calculateProgress(todaysNutrition.calories, goals.daily_calories)}%`,
                     backgroundColor: '#007AFF'
                   }
-                ]} 
+                ]}
               />
             </View>
           </View>
@@ -154,46 +154,46 @@ export default function HomeScreen() {
               <Text style={styles.macroLabel}>Protein</Text>
               <Text style={styles.macroValue}>{Math.round(todaysNutrition.protein)}g</Text>
               <View style={styles.macroProgress}>
-                <View 
+                <View
                   style={[
                     styles.macroFill,
-                    { 
+                    {
                       width: `${calculateProgress(todaysNutrition.protein * 4, (goals.daily_calories * goals.protein_percent / 100))}%`,
                       backgroundColor: '#FF6B6B'
                     }
-                  ]} 
+                  ]}
                 />
               </View>
             </View>
-            
+
             <View style={styles.macroItem}>
               <Text style={styles.macroLabel}>Carbs</Text>
               <Text style={styles.macroValue}>{Math.round(todaysNutrition.carbs)}g</Text>
               <View style={styles.macroProgress}>
-                <View 
+                <View
                   style={[
                     styles.macroFill,
-                    { 
+                    {
                       width: `${calculateProgress(todaysNutrition.carbs * 4, (goals.daily_calories * goals.carbs_percent / 100))}%`,
                       backgroundColor: '#4ECDC4'
                     }
-                  ]} 
+                  ]}
                 />
               </View>
             </View>
-            
+
             <View style={styles.macroItem}>
               <Text style={styles.macroLabel}>Fat</Text>
               <Text style={styles.macroValue}>{Math.round(todaysNutrition.fat)}g</Text>
               <View style={styles.macroProgress}>
-                <View 
+                <View
                   style={[
                     styles.macroFill,
-                    { 
+                    {
                       width: `${calculateProgress(todaysNutrition.fat * 9, (goals.daily_calories * goals.fat_percent / 100))}%`,
                       backgroundColor: '#FFE66D'
                     }
-                  ]} 
+                  ]}
                 />
               </View>
             </View>
@@ -203,10 +203,10 @@ export default function HomeScreen() {
         {/* Recent Meals */}
         <ThemedView style={styles.mealsCard}>
           <View style={styles.cardHeader}>
-            <ThemedText style={styles.cardTitle}>Today's Meals</ThemedText>
+            <ThemedText style={styles.cardTitle}>Today&apos;s Meals</ThemedText>
             <Text style={styles.mealCount}>{todaysNutrition.meal_count} meals</Text>
           </View>
-          
+
           {todaysMeals.length === 0 ? (
             <View style={styles.emptyState}>
               <Ionicons name="restaurant-outline" size={48} color="#ccc" />
@@ -216,8 +216,8 @@ export default function HomeScreen() {
           ) : (
             <View style={styles.mealsList}>
               {todaysMeals.slice(0, 5).map((meal) => (
-                <TouchableOpacity 
-                  key={meal.id} 
+                <TouchableOpacity
+                  key={meal.id}
                   style={styles.mealItem}
                 >
                   <View style={styles.mealInfo}>
@@ -244,12 +244,12 @@ export default function HomeScreen() {
             <Text style={styles.statNumber}>{todaysNutrition.meal_count}</Text>
             <Text style={styles.statLabel}>Meals Today</Text>
           </View>
-          
+
           <View style={styles.statCard}>
             <Text style={styles.statNumber}>{Math.round(todaysNutrition.calories)}</Text>
             <Text style={styles.statLabel}>Calories</Text>
           </View>
-          
+
           <View style={styles.statCard}>
             <Text style={styles.statNumber}>
               {todaysNutrition.calories > 0 ? Math.round((todaysNutrition.calories / goals.daily_calories) * 100) : 0}%
