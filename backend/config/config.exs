@@ -30,7 +30,13 @@ config :phoenix, :json_library, Jason
 
 # Configure CORS
 config :cors_plug,
-  origin: ["http://localhost:3000", "http://localhost:8081", ~r/^https?:\/\/.*\.ngrok\.io$/],
+  origin: [
+    "http://localhost:3000",
+    "http://localhost:8081",
+    "http://192.168.1.9:4000",
+    ~r/^https?:\/\/192\.168\.1\.\d+:\d+$/,
+    ~r/^https?:\/\/.*\.ngrok\.io$/
+  ],
   max_age: 86400,
   methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"]
 

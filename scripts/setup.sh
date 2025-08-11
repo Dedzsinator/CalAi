@@ -68,18 +68,30 @@ setup_frontend() {
 
 # Setup AI environment
 setup_ai() {
-    echo "🧠 Setting up AI training environment..."
+    echo "🧠 Setting up AI environment..."
     cd ai
     
     # Create virtual environment
-    python3 -m venv venv
+    if [ ! -d "venv" ]; then
+        echo "Creating Python virtual environment..."
+        python3 -m venv venv
+    fi
+    
     source venv/bin/activate
     
     # Install dependencies
-    pip install -r requirements.txt
+    echo "Installing AI dependencies..."
+    pip install -q --upgrade pip
+    pip install -q -r requirements.txt
     
-    # Download initial datasets
-    python scripts/download_datasets.py
+    # Check if model is available
+    if [ "$AI_MODEL_AVAILABLE" = true ]; then
+        echo "✅ Trained model available - setting up model server..."
+        echo "Model server will be available at http://localhost:5000"
+    else
+        echo "⚠️  No trained model - will use external APIs only"
+        echo "To train a model, run: python train.py --data-dir ./datasets"
+    fi
     
     cd ..
 }
@@ -147,6 +159,19 @@ PYTHONPATH=/workspace
 EOF
 }
 
+# Check for trained model
+check_trained_model() {
+    echo "🔍 Checking for trained AI model..."
+    
+    if [ -f "./ai/best_model.pth" ]; then
+        echo "✅ Trained AI model found: best_model.pth"
+        AI_MODEL_AVAILABLE=true
+    else
+        echo "⚠️  No trained model found (best_model.pth). AI features will use external APIs only."
+        AI_MODEL_AVAILABLE=false
+    fi
+}
+
 # Main setup function
 main() {
     echo "🎯 CalAi Development Environment Setup"
@@ -159,6 +184,7 @@ main() {
     setup_backend
     setup_frontend
     setup_ai
+    check_trained_model
     
     echo ""
     echo "🎉 Setup complete!"

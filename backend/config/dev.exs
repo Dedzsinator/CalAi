@@ -12,9 +12,9 @@ config :calai, CalAi.Repo,
 
 # Configure the endpoint
 config :calai, CalAiWeb.Endpoint,
-  # Binding to loopback ipv4 address prevents access from other machines.
-  # Change to `ip: {0, 0, 0, 0}` to allow access from other machines.
-  http: [ip: {127, 0, 0, 1}, port: 4000],
+  # Binding to all interfaces to allow access from mobile devices/emulators
+  # Change to `ip: {127, 0, 0, 1}` to restrict to localhost only
+  http: [ip: {0, 0, 0, 0}, port: 4000],
   check_origin: false,
   code_reloader: true,
   debug_errors: true,

@@ -67,7 +67,7 @@ class AIService {
   private async loadModel() {
     try {
       // Load the pre-trained food classification model from CDN
-      const modelUrl = 'https://cdn.calai.app/models/food-classifier/model.json';
+      // const modelUrl = 'https://cdn.calai.app/models/food-classifier/model.json';
       // this.model = await tf.loadGraphModel(modelUrl);
       
       // Load label mappings
@@ -125,18 +125,20 @@ class AIService {
     }
 
     try {
-      // Try local inference first
+      // Try local inference first (if available)
       if (this.model && Platform.OS === 'web') {
+        console.log('Using local AI model for food classification');
         return await this.classifyFoodLocal(imageUri);
       }
       
-      // Fallback to API inference
+      // Primary: Backend API inference (Food-101 via HuggingFace + OpenFoodFacts)
+      console.log('Using backend API for food classification');
       return await this.classifyFoodAPI(imageUri);
     } catch (error) {
       console.error('Food classification failed:', error);
       
-      // Final fallback to API
-      return await this.classifyFoodAPI(imageUri);
+      // Final fallback: create reasonable estimates
+      return await this.createFallbackPrediction(imageUri);
     }
   }
 
@@ -173,6 +175,46 @@ class AIService {
         portion_estimate: '1 serving',
       }];
     }
+  }
+
+  private async createFallbackPrediction(imageUri: string): Promise<FoodPrediction[]> {
+    console.log('Creating fallback prediction for image');
+    
+    // Try to extract some basic info from the image if possible
+    try {
+      // Attempt OCR to see if there's any text
+      const extractedText = await this.extractTextFromImage(imageUri);
+      
+      if (extractedText) {
+        // If we found text, try to create a more informed fallback
+        const packaging = await this.analyzePackaging(imageUri);
+        
+        if (packaging.nutrition_facts) {
+          return [{
+            food_name: packaging.product_name || 'Packaged food',
+            confidence: 0.4,
+            calories: packaging.nutrition_facts.calories,
+            protein: packaging.nutrition_facts.protein,
+            carbs: packaging.nutrition_facts.carbs,
+            fat: packaging.nutrition_facts.fat,
+            portion_estimate: packaging.nutrition_facts.serving_size || '1 serving',
+          }];
+        }
+      }
+    } catch (error) {
+      console.error('Fallback analysis failed:', error);
+    }
+    
+    // Ultimate fallback: generic mixed meal prediction
+    return [{
+      food_name: 'Mixed meal',
+      confidence: 0.2,
+      calories: 400,
+      protein: 18,
+      carbs: 45,
+      fat: 16,
+      portion_estimate: '1 serving',
+    }];
   }
 
   private estimatePortionSize(foodName: string): number {

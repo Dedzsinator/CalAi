@@ -7,47 +7,61 @@ defmodule CalAiWeb.Api.V1.InferenceController do
   use CalAiWeb, :controller
 
   require Logger
+  alias CalAi.Services.{FoodRecognition, OpenFoodFacts}
 
   action_fallback(CalAiWeb.FallbackController)
 
   @doc """
-  Classify food from an image using AI.
+  Classify food from an image using AI with enhanced accuracy.
 
-  Expects a POST request with image data.
+  Expects a POST request with image data and returns Food-101 classifications
+  enhanced with OpenFoodFacts nutrition data.
   """
-  def classify_food(conn, %{"image" => image_params} = params) do
-    user = conn.assigns.current_user
+  def classify_food(conn, %{"image" => image_params} = _params) do
+    start_time = System.monotonic_time(:millisecond)
 
-    Logger.info("Food classification request from user #{user.id}")
+    Logger.info("Enhanced food classification request received")
 
-    # TODO: Implement AI food classification
-    # This would involve:
-    # 1. Validating image format and size
-    # 2. Sending image to AI service
-    # 3. Processing classification results
-    # 4. Returning structured food classification data
+    # Extract image data from upload
+    with {:ok, image_data} <- extract_image_data(image_params),
+         {:ok, result} <-
+           FoodRecognition.classify_food_image(image_data,
+             max_predictions: 5,
+             use_fallback: true
+           ) do
+      processing_time = System.monotonic_time(:millisecond) - start_time
 
-    classification_result = %{
-      predictions: [
-        %{
-          food_name: "apple",
-          confidence: 0.95,
-          category: "fruits",
-          nutrition_estimate: %{
-            calories: 52,
-            carbs: 14.0,
-            fiber: 2.4,
-            sugar: 10.4
-          }
-        }
-      ],
-      processing_time_ms: 150,
-      model_version: "v1.0"
-    }
+      enhanced_result = %{
+        predictions: result.predictions,
+        processing_time_ms: processing_time,
+        model_version: result.model || "food-101-v1.0",
+        cached: result[:cached] || false,
+        enhanced: result[:enhanced] || false,
+        fallback_used: result[:fallback] || false,
+        confidence_threshold: 0.1
+      }
 
-    conn
-    |> put_status(:ok)
-    |> render(:classify_food, classification: classification_result)
+      conn
+      |> put_status(:ok)
+      |> render(:classify_food, classification: enhanced_result)
+    else
+      {:error, :invalid_image} ->
+        conn
+        |> put_status(:bad_request)
+        |> json(%{error: "Invalid image format", success: false})
+
+      {:error, :api_error} ->
+        conn
+        |> put_status(:service_unavailable)
+        |> json(%{error: "AI service temporarily unavailable", success: false})
+
+      {:error, reason} ->
+        Logger.error("Enhanced food classification failed: #{inspect(reason)}")
+
+        conn
+        |> put_status(:internal_server_error)
+        |> json(%{error: "Classification failed", success: false})
+    end
   end
 
   @doc """
@@ -56,46 +70,56 @@ defmodule CalAiWeb.Api.V1.InferenceController do
   Expects a POST request with image data and optional food context.
   """
   def estimate_nutrition(conn, %{"image" => image_params} = params) do
-    user = conn.assigns.current_user
     food_context = Map.get(params, "food_context", %{})
+    start_time = System.monotonic_time(:millisecond)
 
-    Logger.info("Nutrition estimation request from user #{user.id}")
+    Logger.info("Nutrition estimation request received")
 
-    # TODO: Implement AI nutrition estimation
-    # This would involve:
-    # 1. Analyzing image for portion size
-    # 2. Identifying food items
-    # 3. Calculating nutrition based on portion and food type
-    # 4. Returning detailed nutrition breakdown
+    # First classify the food, then enhance with detailed nutrition
+    with {:ok, image_data} <- extract_image_data(image_params),
+         {:ok, classification_result} <-
+           FoodRecognition.classify_food_image(image_data, max_predictions: 1) do
+      case classification_result.predictions do
+        [top_prediction | _] ->
+          # Get detailed nutrition data for the top prediction
+          detailed_nutrition = get_detailed_nutrition(top_prediction, food_context)
 
-    nutrition_result = %{
-      total_nutrition: %{
-        calories: 245,
-        protein: 3.2,
-        carbs: 52.0,
-        fat: 0.8,
-        fiber: 4.1,
-        sugar: 39.2,
-        sodium: 2.0
-      },
-      portion_analysis: %{
-        estimated_weight_g: 180,
-        confidence: 0.87,
-        serving_description: "1 medium apple"
-      },
-      food_items: [
-        %{
-          name: "apple",
-          weight_g: 180,
-          confidence: 0.95
-        }
-      ],
-      processing_time_ms: 230
-    }
+          processing_time = System.monotonic_time(:millisecond) - start_time
 
-    conn
-    |> put_status(:ok)
-    |> render(:estimate_nutrition, nutrition: nutrition_result)
+          nutrition_result = %{
+            total_nutrition: detailed_nutrition.nutrition,
+            portion_analysis: %{
+              estimated_weight_g: detailed_nutrition.estimated_weight,
+              confidence: top_prediction.confidence,
+              serving_description: top_prediction.portion_estimate
+            },
+            food_items: [
+              %{
+                name: top_prediction.food_name,
+                weight_g: detailed_nutrition.estimated_weight,
+                confidence: top_prediction.confidence
+              }
+            ],
+            processing_time_ms: processing_time
+          }
+
+          conn
+          |> put_status(:ok)
+          |> render(:estimate_nutrition, nutrition: nutrition_result)
+
+        [] ->
+          conn
+          |> put_status(:unprocessable_entity)
+          |> json(%{error: "Could not identify food in image", success: false})
+      end
+    else
+      {:error, reason} ->
+        Logger.error("Nutrition estimation failed: #{inspect(reason)}")
+
+        conn
+        |> put_status(:internal_server_error)
+        |> json(%{error: "Nutrition estimation failed", success: false})
+    end
   end
 
   @doc """
@@ -139,5 +163,96 @@ defmodule CalAiWeb.Api.V1.InferenceController do
     conn
     |> put_status(:ok)
     |> render(:extract_text, ocr: ocr_result)
+  end
+
+  # Private helper functions
+
+  defp extract_image_data(%Plug.Upload{path: path}) do
+    case File.read(path) do
+      {:ok, data} -> {:ok, data}
+      {:error, _} -> {:error, :invalid_image}
+    end
+  end
+
+  defp extract_image_data(%{"path" => path}) when is_binary(path) do
+    case File.read(path) do
+      {:ok, data} -> {:ok, data}
+      {:error, _} -> {:error, :invalid_image}
+    end
+  end
+
+  defp extract_image_data(base64_data) when is_binary(base64_data) do
+    try do
+      case Base.decode64(base64_data) do
+        {:ok, data} -> {:ok, data}
+        :error -> {:error, :invalid_image}
+      end
+    rescue
+      _ -> {:error, :invalid_image}
+    end
+  end
+
+  defp extract_image_data(_), do: {:error, :invalid_image}
+
+  defp get_detailed_nutrition(prediction, food_context) do
+    # Extract portion information from context or estimate
+    portion_weight =
+      Map.get(
+        food_context,
+        "estimated_weight",
+        estimate_weight_from_portion(prediction.portion_estimate)
+      )
+
+    # Calculate nutrition based on portion size (predictions are usually per 100g)
+    multiplier = portion_weight / 100.0
+
+    %{
+      nutrition: %{
+        calories: round((prediction.calories || 0) * multiplier),
+        protein: Float.round((prediction.protein || 0) * multiplier, 1),
+        carbs: Float.round((prediction.carbs || 0) * multiplier, 1),
+        fat: Float.round((prediction.fat || 0) * multiplier, 1),
+        fiber: Float.round((prediction.fiber || 0) * multiplier, 1),
+        sugar: Float.round((prediction.sugar || 0) * multiplier, 1),
+        sodium: Float.round((prediction[:sodium] || 0) * multiplier, 1)
+      },
+      estimated_weight: portion_weight
+    }
+  end
+
+  defp estimate_weight_from_portion(portion_description) do
+    portion_lower = String.downcase(portion_description || "100g")
+
+    cond do
+      String.contains?(portion_lower, "slice") ->
+        120
+
+      String.contains?(portion_lower, "cup") ->
+        150
+
+      String.contains?(portion_lower, "piece") ->
+        200
+
+      String.contains?(portion_lower, "medium") ->
+        180
+
+      String.contains?(portion_lower, "large") ->
+        250
+
+      String.contains?(portion_lower, "small") ->
+        80
+
+      String.contains?(portion_lower, "serving") ->
+        150
+
+      String.match?(portion_lower, ~r/(\d+)g/) ->
+        case Regex.run(~r/(\d+)g/, portion_lower) do
+          [_, weight_str] -> String.to_integer(weight_str)
+          _ -> 100
+        end
+
+      true ->
+        100
+    end
   end
 end

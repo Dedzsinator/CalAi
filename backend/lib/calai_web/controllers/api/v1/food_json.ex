@@ -88,15 +88,40 @@ defmodule CalAiWeb.Api.V1.FoodJSON do
     }
   end
 
-  defp search_data(%Food{} = food) do
-    %{
-      id: food.id,
-      name: food.name,
-      brand: food.brand,
-      calories_per_100g: food.calories_per_100g,
-      protein_per_100g: food.protein_per_100g,
-      carbs_per_100g: food.carbs_per_100g,
-      fat_per_100g: food.fat_per_100g
-    }
+  defp search_data(food) when is_map(food) do
+    # Handle both local Food structs and OpenFoodFacts maps
+    cond do
+      Map.has_key?(food, :__struct__) and food.__struct__ == CalAi.Nutrition.Food ->
+        # Local Food struct
+        %{
+          id: food.id,
+          name: food.name,
+          brand: food.brand,
+          calories_per_100g: food.calories_per_100g,
+          protein_per_100g: food.protein_per_100g,
+          carbs_per_100g: food.carbs_per_100g,
+          fat_per_100g: food.fat_per_100g
+        }
+
+      true ->
+        # OpenFoodFacts map or enhanced food data
+        %{
+          id: Map.get(food, :code) || Map.get(food, "code"),
+          name: Map.get(food, :name) || Map.get(food, "name"),
+          brand: Map.get(food, :brand) || Map.get(food, "brand"),
+          calories_per_100g:
+            Map.get(food, :calories_per_100g) || Map.get(food, "calories_per_100g") || 0,
+          protein_per_100g:
+            Map.get(food, :protein_per_100g) || Map.get(food, "protein_per_100g") || 0,
+          carbs_per_100g: Map.get(food, :carbs_per_100g) || Map.get(food, "carbs_per_100g") || 0,
+          fat_per_100g: Map.get(food, :fat_per_100g) || Map.get(food, "fat_per_100g") || 0,
+          fiber_per_100g: Map.get(food, :fiber_per_100g) || Map.get(food, "fiber_per_100g"),
+          sugar_per_100g: Map.get(food, :sugar_per_100g) || Map.get(food, "sugar_per_100g"),
+          sodium_per_100g: Map.get(food, :sodium_per_100g) || Map.get(food, "sodium_per_100g"),
+          confidence: Map.get(food, :confidence) || Map.get(food, "confidence"),
+          image_url: Map.get(food, :image_url) || Map.get(food, "image_url"),
+          source: Map.get(food, :source) || Map.get(food, "source") || "unknown"
+        }
+    end
   end
 end

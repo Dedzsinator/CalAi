@@ -1,6 +1,5 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
-
-const API_BASE_URL = __DEV__ ? 'http://localhost:4000' : 'https://api.calai.app';
+import { API_CONFIG, buildApiUrl } from '../config/api.config';
 
 interface ApiResponse<T> {
   data: T;
@@ -12,7 +11,7 @@ class ApiService {
   private baseURL: string;
   private token: string | null = null;
 
-  constructor(baseURL: string = API_BASE_URL) {
+  constructor(baseURL: string = API_CONFIG.baseUrl) {
     this.baseURL = baseURL;
     this.loadToken();
   }

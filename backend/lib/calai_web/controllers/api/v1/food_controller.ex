@@ -3,6 +3,7 @@ defmodule CalAiWeb.Api.V1.FoodController do
 
   alias CalAi.{Nutrition, Repo, Cache}
   alias CalAi.Nutrition.Food
+  alias CalAi.Services.OpenFoodFacts
 
   action_fallback(CalAiWeb.FallbackController)
 
@@ -72,14 +73,43 @@ defmodule CalAiWeb.Api.V1.FoodController do
     limit = Map.get(params, "limit", "20") |> String.to_integer()
     category = Map.get(params, "category")
 
-    foods = Nutrition.search_foods(query, %{limit: limit, category: category})
-    total_count = Nutrition.count_search_results(query, category)
+    # Search local database first
+    local_foods = Nutrition.search_foods(query, %{limit: limit, category: category})
 
-    render(conn, "search.json", %{
-      foods: foods,
-      query: query,
-      total_count: total_count
-    })
+    # If we have local results, return them
+    if length(local_foods) > 0 do
+      total_count = Nutrition.count_search_results(query, category)
+
+      render(conn, "search.json", %{
+        foods: local_foods,
+        query: query,
+        total_count: total_count,
+        source: "local"
+      })
+    else
+      # Fall back to OpenFoodFacts API
+      case OpenFoodFacts.search_foods(query, limit: limit) do
+        {:ok, %{foods: off_foods}} ->
+          render(conn, "search.json", %{
+            foods: off_foods,
+            query: query,
+            total_count: length(off_foods),
+            source: "openfoodfacts"
+          })
+
+        {:error, reason} ->
+          Logger.error("OpenFoodFacts search failed: #{inspect(reason)}")
+
+          # Return empty results with error info
+          render(conn, "search.json", %{
+            foods: [],
+            query: query,
+            total_count: 0,
+            error: "External API unavailable",
+            source: "local"
+          })
+      end
+    end
   end
 
   def popular(conn, params) do
@@ -224,53 +254,93 @@ defmodule CalAiWeb.Api.V1.FoodController do
   end
 
   def barcode_lookup(conn, %{"barcode" => barcode}) do
-    # Check cache first
-    case CalAi.Cache.get_cached_barcode(barcode) do
-      {:ok, cached_data} ->
-        render(conn, "barcode.json", product: cached_data)
+    # Try local database first
+    case Nutrition.get_food_by_barcode(barcode) do
+      nil ->
+        # Try OpenFoodFacts API
+        case OpenFoodFacts.get_product_by_barcode(barcode) do
+          {:ok, product_data} ->
+            # Optionally save to local database for future use
+            save_product_to_db(product_data)
 
-      {:miss, _} ->
-        # Cache miss - try to lookup from external API or database
-        case Nutrition.get_food_by_barcode(barcode) do
-          nil ->
-            # Try external barcode API (e.g., Open Food Facts)
-            case lookup_external_barcode(barcode) do
-              {:ok, product_data} ->
-                # Cache the result
-                CalAi.Cache.cache_barcode(barcode, product_data)
-                render(conn, "barcode.json", product: product_data)
+            render(conn, "barcode.json", product: format_barcode_response(product_data))
 
-              {:error, :not_found} ->
-                {:error, :not_found}
+          {:error, :not_found} ->
+            {:error, :not_found}
 
-              {:error, reason} ->
-                {:error, reason}
-            end
-
-          food ->
-            # Convert food to product format
-            product_data = %{
-              name: food.name,
-              brand: food.brand || "",
-              nutrition: %{
-                calories: food.calories_per_100g,
-                protein: food.protein_per_100g,
-                carbs: food.carbs_per_100g,
-                fat: food.fat_per_100g
-              }
-            }
-
-            # Cache the result
-            CalAi.Cache.cache_barcode(barcode, product_data)
-            render(conn, "barcode.json", product: product_data)
+          {:error, reason} ->
+            Logger.error("OpenFoodFacts barcode lookup failed: #{inspect(reason)}")
+            {:error, :external_api_error}
         end
+
+      food ->
+        # Convert local food to product format
+        product_data = %{
+          name: food.name,
+          brand: food.brand || "",
+          barcode: food.barcode,
+          image_url: food.image_url,
+          nutrition: %{
+            calories: food.calories_per_100g,
+            protein: food.protein_per_100g,
+            carbs: food.carbs_per_100g,
+            fat: food.fat_per_100g,
+            fiber: food.fiber_per_100g,
+            sugar: food.sugar_per_100g,
+            sodium: food.sodium_per_100g
+          },
+          source: "local"
+        }
+
+        render(conn, "barcode.json", product: product_data)
     end
   end
 
-  # Private helper function for external barcode lookup
-  defp lookup_external_barcode(barcode) do
-    # TODO: Implement external API call to Open Food Facts or similar
-    # For now, return not found
-    {:error, :not_found}
+  # Save OpenFoodFacts product to local database for future use
+  defp save_product_to_db(product_data) do
+    food_attrs = %{
+      name: product_data.name,
+      brand: product_data.brand,
+      barcode: product_data.barcode,
+      image_url: product_data.image_url,
+      calories_per_100g: round(product_data.calories_per_100g),
+      protein_per_100g: product_data.protein_per_100g,
+      carbs_per_100g: product_data.carbs_per_100g,
+      fat_per_100g: product_data.fat_per_100g,
+      fiber_per_100g: product_data.fiber_per_100g,
+      sugar_per_100g: product_data.sugar_per_100g,
+      sodium_per_100g: product_data.sodium_per_100g,
+      source: "openfoodfacts",
+      verified: true,
+      confidence_score: product_data.confidence
+    }
+
+    case Nutrition.create_food(food_attrs) do
+      {:ok, _food} ->
+        Logger.info("Saved OpenFoodFacts product to local DB: #{product_data.name}")
+
+      {:error, changeset} ->
+        Logger.warn("Failed to save OpenFoodFacts product: #{inspect(changeset.errors)}")
+    end
+  end
+
+  defp format_barcode_response(product_data) do
+    %{
+      name: product_data.name,
+      brand: product_data.brand || "",
+      barcode: product_data.barcode,
+      image_url: product_data.image_url,
+      nutrition: %{
+        calories: product_data.calories_per_100g,
+        protein: product_data.protein_per_100g,
+        carbs: product_data.carbs_per_100g,
+        fat: product_data.fat_per_100g,
+        fiber: product_data.fiber_per_100g || 0,
+        sugar: product_data.sugar_per_100g || 0,
+        sodium: product_data.sodium_per_100g || 0
+      },
+      confidence: product_data.confidence,
+      source: product_data.source
+    }
   end
 end
